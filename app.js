@@ -11,6 +11,7 @@ let audioFile = null;
 let videoUrl = null;
 let audioUrl = null;
 let translatedUrl = null;
+let transcriptUrl = null;
 let toastTimer;
 let trimStart = 0;
 let trimEnd = 0;
@@ -67,9 +68,19 @@ function updateSourceOptions() {
 
 function updateTranslateButton() {
   const file = sourceChoice.value === "video" ? videoFile : audioFile;
-  translateButton.disabled = !file || $("#translation-progress").hidden === false;
+  const language = $("#target-language").value.trim();
+  translateButton.disabled = !file || !language || $("#translation-progress").hidden === false;
   translateButton.title = file ? "" : "Import an audio or video file first.";
 }
+
+$("#target-language").addEventListener("input", updateTranslateButton);
+$("#target-language").addEventListener("change", () => {
+  const isArabic = ["arabic", "ar"].includes($("#target-language").value.trim().toLowerCase());
+  const arabicVoices = ["fahad", "lulwa", "noura", "abdullah", "sultan", "aisha"];
+  const englishVoices = ["hannah", "troy", "austin", "autumn", "diana"];
+  if (isArabic && !arabicVoices.includes($("#voice-select").value)) $("#voice-select").value = "fahad";
+  if (!isArabic && arabicVoices.includes($("#voice-select").value)) $("#voice-select").value = "hannah";
+});
 
 function setupVideo(file) {
   if (videoUrl) URL.revokeObjectURL(videoUrl);
@@ -342,18 +353,17 @@ async function requestTranslation(blob, language, voice) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || `Translation failed (${response.status}).`);
   }
-  let translatedText = "";
-  try {
-    translatedText = decodeURIComponent(response.headers.get("x-translated-text") || "");
-  } catch {
-    translatedText = "The audio was translated successfully.";
+  const result = await response.json();
+  if (typeof result.translatedText !== "string" || !result.translatedText.trim()) {
+    throw new Error("The translation service returned an empty transcript.");
   }
-  const audioBlob = await response.blob();
-  if (!audioBlob.size) throw new Error("The translation response did not contain audio.");
-  return { audioBlob, translatedText };
+  const audioBlob = result.audioBase64
+    ? new Blob([Uint8Array.from(atob(result.audioBase64), (character) => character.charCodeAt(0))], { type: result.audioMimeType || "audio/wav" })
+    : null;
+  return { audioBlob, translatedText: result.translatedText, audioUnavailableReason: result.audioUnavailableReason };
 }
 
-translateButton.addEventListener("click", async () => {
+async function translateCurrentAudio() {
   const sourceFile = sourceChoice.value === "audio" ? audioFile : videoFile;
   if (!sourceFile) return showToast("Import a video or audio file first.", true);
   $("#translation-progress").hidden = false;
@@ -366,25 +376,86 @@ translateButton.addEventListener("click", async () => {
       throw new Error("This Vercel setup accepts audio up to 4 MiB per request. Choose a shorter section, or use a storage-backed deployment for longer audio.");
     }
     $("#progress-label").textContent = "Transcribing, translating, and generating voice…";
-    const result = await requestTranslation(blob, $("#target-language").value, $("#voice-select").value);
+    const language = $("#target-language").value.trim();
+    const result = await requestTranslation(blob, language, $("#voice-select").value);
     if (translatedUrl) URL.revokeObjectURL(translatedUrl);
-    translatedUrl = URL.createObjectURL(result.audioBlob);
-    $("#translated-audio").src = translatedUrl;
-    $("#download-audio").href = translatedUrl;
-    $("#download-audio").download = `translated-${$("#target-language").value.toLowerCase()}.mp3`;
-    $("#result-language").textContent = `AI voiceover · ${$("#target-language").value}`;
-    $("#translated-transcript").textContent = result.translatedText || "Transcript is available in the translated audio.";
+    translatedUrl = result.audioBlob ? URL.createObjectURL(result.audioBlob) : null;
+    if (transcriptUrl) URL.revokeObjectURL(transcriptUrl);
+    transcriptUrl = URL.createObjectURL(new Blob([result.translatedText], { type: "text/plain;charset=utf-8" }));
+    const translatedAudio = $("#translated-audio");
+    translatedAudio.hidden = !translatedUrl;
+    if (translatedUrl) translatedAudio.src = translatedUrl;
+    $("#download-audio").hidden = !translatedUrl;
+    if (translatedUrl) {
+      $("#download-audio").href = translatedUrl;
+      $("#download-audio").download = `translated-${language.toLowerCase()}.wav`;
+    }
+    $("#download-transcript").href = transcriptUrl;
+    $("#download-transcript").download = `translated-${language.toLowerCase()}-transcript.txt`;
+    $("#audio-unavailable").textContent = result.audioUnavailableReason || "";
+    $("#result-language").textContent = translatedUrl ? `Translated voiceover · ${language}` : `Translated text · ${language}`;
+    $("#translated-transcript").textContent = result.translatedText;
     $("#translation-result").hidden = false;
-    $("#apply-dub-button").hidden = !videoFile;
-    $("#audio-lane").innerHTML = '<div class="audio-clip"></div>';
+    $("#apply-dub-button").hidden = !videoFile || !translatedUrl;
+    if (translatedUrl) $("#audio-lane").innerHTML = '<div class="audio-clip"></div>';
     refreshTimeline();
-    showToast("Translation is ready to preview and download.");
+    showToast(translatedUrl ? "Translation and voiceover are ready." : "Translation is ready to download as a transcript.");
   } catch (error) {
     showToast(error.message || "Audio translation failed.", true);
   } finally {
     recording = null;
     $("#translation-progress").hidden = true;
     updateTranslateButton();
+  }
+}
+translateButton.addEventListener("click", translateCurrentAudio);
+
+$("#ai-edit-button").addEventListener("click", async () => {
+  const button = $("#ai-edit-button");
+  const prompt = $("#ai-edit-prompt").value.trim();
+  const status = $("#ai-edit-status");
+  if (!prompt) {
+    status.textContent = "Describe what you want to change first.";
+    $("#ai-edit-prompt").focus();
+    return;
+  }
+  button.disabled = true;
+  status.textContent = "Thinking through your edit…";
+  try {
+    const response = await fetch("/api/edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, duration: Number.isFinite(video.duration) ? video.duration : null }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `AI edit failed (${response.status}).`);
+    if (result.action === "trim") {
+      if (!videoFile || result.end > video.duration) throw new Error("Import a video before applying a trim.");
+      trimStart = result.start;
+      trimEnd = result.end;
+      $("#trim-start").value = trimStart.toFixed(1);
+      $("#trim-end").value = trimEnd.toFixed(1);
+      $("#trim-controls").hidden = false;
+      seekTo(trimStart);
+      refreshTimeline();
+      status.textContent = `${result.reply || "Trim range applied."} Review the In and Out values before exporting.`;
+    } else if (result.action === "aspect_ratio") {
+      $("#aspect-ratio").value = result.ratio;
+      $("#aspect-ratio").dispatchEvent(new Event("change"));
+      status.textContent = `${result.reply || "Canvas ratio changed."} Review the preview before exporting.`;
+    } else if (result.action === "translate") {
+      if (!videoFile && !audioFile) throw new Error("Import audio or video before requesting translation.");
+      $("#target-language").value = result.language;
+      updateTranslateButton();
+      status.textContent = `${result.reply || `Translating to ${result.language}.`} Starting translation…`;
+      await translateCurrentAudio();
+    } else {
+      status.textContent = result.reply || "Try asking for a trim range, canvas ratio, or audio translation.";
+    }
+  } catch (error) {
+    status.textContent = error.message || "The AI edit assistant could not process that instruction.";
+  } finally {
+    button.disabled = false;
   }
 });
 

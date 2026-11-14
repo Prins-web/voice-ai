@@ -109,19 +109,26 @@
               <option value="Spanish"></option><option value="French"></option><option value="German"></option><option value="Italian"></option><option value="Portuguese"></option><option value="Japanese"></option><option value="Korean"></option><option value="Chinese"></option><option value="Hindi"></option><option value="Arabic"></option><option value="English"></option><option value="Dutch"></option><option value="Russian"></option><option value="Turkish"></option><option value="Polish"></option><option value="Swedish"></option><option value="Ukrainian"></option><option value="Greek"></option><option value="Vietnamese"></option><option value="Thai"></option><option value="Hebrew"></option><option value="Indonesian"></option><option value="Swahili"></option><option value="Bengali"></option><option value="Urdu"></option><option value="Czech"></option><option value="Norwegian"></option><option value="Danish"></option><option value="Finnish"></option><option value="Romanian"></option><option value="Hungarian"></option><option value="Malay"></option><option value="Filipino"></option>
             </datalist>
             <label class="field-label voice-label" for="voice-select">Voice</label>
-            <select class="field-select" id="voice-select"><option value="alloy">Alloy · balanced</option><option value="nova">Nova · warm</option><option value="echo">Echo · deep</option><option value="shimmer">Shimmer · bright</option><option value="fable">Fable · expressive</option><option value="onyx">Onyx · rich</option></select>
-            <div class="quality-note"><span>✧</span><span>AI will transcribe, translate, and generate a new voiceover. Always review the result for accuracy.</span></div>
+            <select class="field-select" id="voice-select"><option value="hannah">Hannah · English</option><option value="troy">Troy · English</option><option value="austin">Austin · English</option><option value="autumn">Autumn · English</option><option value="diana">Diana · English</option><option value="daniel">Daniel · English</option><option value="fahad">Fahad · Saudi Arabic</option><option value="lulwa">Lulwa · Saudi Arabic</option><option value="noura">Noura · Saudi Arabic</option><option value="abdullah">Abdullah · Saudi Arabic</option><option value="sultan">Sultan · Saudi Arabic</option><option value="aisha">Aisha · Saudi Arabic</option></select>
+            <div class="quality-note"><span>✧</span><span>Groq transcribes and translates many languages. Voice generation is currently available only for English and Saudi Arabic; review results for accuracy.</span></div>
             <button class="button translate-button" id="translate-button" disabled><span class="translate-button-icon">✳</span> Translate audio <span class="button-arrow">→</span></button>
             <div class="translation-progress" id="translation-progress" hidden><div class="progress-top"><span id="progress-label">Preparing audio…</span><span class="spinner"></span></div><div class="progress-bar"><span></span></div><span class="progress-help">Keep this tab open while AI processes your audio.</span></div>
           </div>
           <div class="translation-result" id="translation-result" hidden>
             <div class="result-heading"><span class="result-check">✓</span><div><strong>Translation ready</strong><span id="result-language">Your translated audio</span></div></div>
-            <audio id="translated-audio" controls></audio>
-            <div class="result-actions"><button class="button button-secondary apply-dub" id="apply-dub-button" hidden>Preview with video</button><a class="download-link" id="download-audio" download="translated-audio.mp3">↓ Download audio</a></div>
+            <audio id="translated-audio" controls hidden></audio>
+            <p class="audio-unavailable" id="audio-unavailable"></p>
+            <div class="result-actions"><button class="button button-secondary apply-dub" id="apply-dub-button" hidden>Preview with video</button><a class="download-link" id="download-audio" download="translated-audio.wav" hidden>↓ Download audio</a><a class="download-link" id="download-transcript" download="translated-transcript.txt">↓ Download transcript</a></div>
             <details class="transcript-details"><summary>View translated transcript</summary><p id="translated-transcript"></p></details>
           </div>
+          <div class="ai-edit-card">
+            <div class="ai-edit-heading"><span class="ai-edit-icon">✳</span><div><strong>AI edit assistant</strong><span>Describe an edit in your words</span></div></div>
+            <textarea id="ai-edit-prompt" maxlength="2000" rows="3" placeholder="e.g. Trim this video from 12 to 38 seconds&#10;or change it to vertical 9:16"></textarea>
+            <button class="button ai-edit-button" id="ai-edit-button"><span>✳</span> Suggest &amp; apply edit <span class="button-arrow">→</span></button>
+            <p class="ai-edit-status" id="ai-edit-status" aria-live="polite">AI can set a trim range, change the canvas ratio, or start a translation. You can review changes before exporting.</p>
+          </div>
           <div class="tips-card"><span class="tips-icon">✦</span><div><strong>A little tip</strong><p>Clear speech with minimal background noise gives the best translation.</p></div></div>
-          <p class="api-note">Translation uses OpenAI. Add <code>OPENAI_API_KEY</code> to your Vercel project to enable it.</p>
+          <p class="api-note">AI tools use Groq. Add <code>GROQ_API_KEY</code> to your Vercel project settings. Never put the key in browser code.</p>
         </aside>
       </main>
       <footer class="footer"><span>FRAME <span class="footer-dot">●</span> VIDEO STUDIO</span><span>Made for stories that travel.</span><button id="keyboard-help">⌘ / &nbsp; Keyboard shortcuts</button></footer>
