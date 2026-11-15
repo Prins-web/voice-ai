@@ -18,7 +18,15 @@ let trimEnd = 0;
 let timelineZoom = 1;
 let recording = null;
 let audioContext = null;
+let audioDestination = null;
+let audioSource = null;
+let exporting = false;
 let dubbed = false;
+
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+const FAST_EXTRACT_FILE_LIMIT = 320 * 1024 * 1024;
+const FAST_EXTRACT_SAMPLE_RATE = 16000;
+const FAST_EXTRACT_MIN_SAMPLE_RATE = 8000;
 
 const formatTime = (seconds) => {
   if (!Number.isFinite(seconds)) return "00:00";
@@ -26,6 +34,133 @@ const formatTime = (seconds) => {
   const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
   return `${mins}:${secs}`;
 };
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+/* ---- Progress feedback -------------------------------------------------- */
+let progressTimer = null;
+let progressStart = 0;
+let progressBase = "";
+let progressDetail = "";
+
+function paintProgress() {
+  const label = $("#progress-label");
+  if (!label) return;
+  const seconds = Math.floor((performance.now() - progressStart) / 1000);
+  const time = seconds > 0 ? ` · ${seconds}s` : "";
+  label.textContent = `${progressBase}${progressDetail ? ` · ${progressDetail}` : ""}${time}`;
+}
+
+function setProgressLabel(base, detail = "") {
+  progressBase = base;
+  progressDetail = detail;
+  paintProgress();
+}
+
+function startProgressClock() {
+  progressStart = performance.now();
+  clearInterval(progressTimer);
+  progressTimer = setInterval(paintProgress, 500);
+}
+
+function stopProgressClock() {
+  clearInterval(progressTimer);
+  progressTimer = null;
+}
+
+/* ---- Fast, non-realtime audio extraction --------------------------------
+   Decoding the container and slicing the trim range locally takes a few
+   hundred milliseconds, instead of recording the section in real time. */
+function encodeWavMono(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeText = (offset, text) => {
+    for (let index = 0; index < text.length; index += 1) view.setUint8(offset + index, text.charCodeAt(index));
+  };
+  writeText(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeText(8, "WAVE");
+  writeText(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeText(36, "data");
+  view.setUint32(40, samples.length * 2, true);
+  let offset = 44;
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = clamp(samples[index], -1, 1);
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+function renderWavSlice(decoded, startSeconds, endSeconds, maxBytes = Infinity) {
+  const duration = decoded.duration;
+  const start = clamp(startSeconds, 0, duration);
+  const end = clamp(endSeconds, start + 0.05, duration);
+  if (!(end > start)) return null;
+  const sourceRate = decoded.sampleRate;
+  const startSample = Math.floor(start * sourceRate);
+  const endSample = Math.min(decoded.length, Math.ceil(end * sourceRate));
+  const sourceCount = endSample - startSample;
+  if (sourceCount <= 0) return null;
+  const seconds = sourceCount / sourceRate;
+  // Keep the best quality that still fits the request cap. Lower rates still
+  // transcribe well and let clips up to roughly four minutes skip real-time capture.
+  const candidates = [FAST_EXTRACT_SAMPLE_RATE, 12000, FAST_EXTRACT_MIN_SAMPLE_RATE].filter((rate) => rate <= sourceRate);
+  if (sourceRate < FAST_EXTRACT_MIN_SAMPLE_RATE) candidates.push(sourceRate);
+  const targetRate = [...new Set(candidates)]
+    .sort((a, b) => b - a)
+    .find((rate) => 44 + Math.floor(seconds * rate) * 2 <= maxBytes);
+  if (!targetRate) return null;
+  const step = sourceRate / targetRate;
+  const outputLength = Math.floor(sourceCount / step);
+  if (outputLength <= 0) return null;
+  const channels = decoded.numberOfChannels;
+  const channelData = [];
+  for (let channel = 0; channel < channels; channel += 1) channelData.push(decoded.getChannelData(channel));
+  const output = new Float32Array(outputLength);
+  for (let index = 0; index < outputLength; index += 1) {
+    const from = startSample + Math.floor(index * step);
+    const to = Math.min(endSample, Math.max(from + 1, startSample + Math.floor((index + 1) * step)));
+    let sum = 0;
+    let count = 0;
+    for (let sample = from; sample < to; sample += 1) {
+      for (let channel = 0; channel < channels; channel += 1) sum += channelData[channel][sample] || 0;
+      count += channels;
+    }
+    output[index] = count ? sum / count : 0;
+  }
+  return encodeWavMono(output, targetRate);
+}
+
+async function extractAudioFast(file, start, end) {
+  if (!file || file.size > FAST_EXTRACT_FILE_LIMIT) return null;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass || typeof file.arrayBuffer !== "function") return null;
+  let context;
+  try {
+    context = new AudioContextClass();
+    const encoded = await file.arrayBuffer();
+    const decoded = await new Promise((resolve, reject) => {
+      const result = context.decodeAudioData(encoded, resolve, reject);
+      if (result && typeof result.then === "function") result.then(resolve, reject);
+    });
+    const blob = renderWavSlice(decoded, start, end, MAX_UPLOAD_BYTES);
+    if (!blob || blob.size > MAX_UPLOAD_BYTES) return null;
+    return blob;
+  } catch (error) {
+    console.warn("Fast audio extraction is unavailable, using real-time capture instead.", error);
+    return null;
+  } finally {
+    context?.close?.().catch(() => {});
+  }
+}
 
 function showToast(message, isError = false) {
   const toast = $("#toast");
@@ -41,7 +176,8 @@ function addMediaItem(file, type) {
   list.querySelector(".empty-media")?.remove();
   const item = document.createElement("div");
   item.className = "media-item selected";
-  item.innerHTML = `<div class="media-thumb ${type === "audio" ? "audio-thumb" : ""}">${type === "audio" ? "♫" : "▶"}</div><div class="media-info"><strong></strong><span></span></div>`;
+  const icon = type === "audio" ? "i-music" : "i-video";
+  item.innerHTML = `<div class="media-thumb ${type === "audio" ? "audio-thumb" : ""}"><svg class="icon"><use href="#${icon}"></use></svg></div><div class="media-info"><strong></strong><span></span></div>`;
   item.querySelector("strong").textContent = file.name;
   item.querySelector("span").textContent = `${type === "audio" ? "Audio" : "Video"} · ${formatBytes(file.size)}`;
   list.querySelectorAll(".media-item").forEach((el) => el.classList.remove("selected"));
@@ -106,6 +242,7 @@ function setupVideo(file) {
   sourceChoice.value = "video";
   addMediaItem(file, "video");
   updateSourceOptions();
+  window.frameShowView?.("studio");
 }
 
 function setupAudio(file) {
@@ -124,6 +261,7 @@ function setupAudio(file) {
   $("#audio-lane").innerHTML = '<div class="audio-clip"></div>';
   addMediaItem(file, "audio");
   updateSourceOptions();
+  window.frameShowView?.("studio");
 }
 
 videoInput.addEventListener("change", () => {
@@ -170,16 +308,46 @@ video.addEventListener("loadedmetadata", () => {
   refreshTimeline();
 });
 
-video.addEventListener("timeupdate", () => {
-  $("#current-time").textContent = formatTime(video.currentTime);
+function updatePlayhead() {
   const duration = video.duration || 1;
-  const percentage = Math.min(100, Math.max(0, (video.currentTime / duration) * 100));
-  $("#playhead").style.left = `calc(66px + (100% - 66px) * ${percentage / 100})`;
+  const percentage = clamp(Number.isFinite(duration) ? video.currentTime / duration : 0, 0, 1);
+  const playhead = $("#playhead");
+  if (playhead) playhead.style.left = `calc(66px + (100% - 66px) * ${percentage})`;
+  const current = $("#current-time");
+  if (current) current.textContent = formatTime(video.currentTime);
+}
+
+let playheadFrame = null;
+function animatePlayhead() {
+  updatePlayhead();
+  playheadFrame = video.paused ? null : requestAnimationFrame(animatePlayhead);
+}
+
+function setPlayIcon(isPlaying) {
+  const button = $("#play-button");
+  button.querySelector("use")?.setAttribute("href", isPlaying ? "#i-pause" : "#i-play");
+  button.setAttribute("aria-label", isPlaying ? "Pause" : "Play");
+}
+
+function setVolumeIcon() {
+  const button = $("#volume-button");
+  const muted = video.muted || video.volume === 0;
+  button.querySelector("use")?.setAttribute("href", muted ? "#i-mute" : "#i-volume");
+  button.setAttribute("aria-label", muted ? "Unmute" : "Mute");
+  button.title = muted ? "Unmute" : "Mute";
+}
+
+video.addEventListener("timeupdate", () => {
+  updatePlayhead();
   if (recording && video.currentTime >= trimEnd) video.pause();
 });
-video.addEventListener("ended", () => $("#play-button").textContent = "▶");
-video.addEventListener("play", () => $("#play-button").textContent = "Ⅱ");
-video.addEventListener("pause", () => $("#play-button").textContent = "▶");
+video.addEventListener("ended", () => setPlayIcon(false));
+video.addEventListener("play", () => {
+  setPlayIcon(true);
+  if (playheadFrame === null) playheadFrame = requestAnimationFrame(animatePlayhead);
+});
+video.addEventListener("pause", () => setPlayIcon(false));
+video.addEventListener("seeked", updatePlayhead);
 video.addEventListener("durationchange", refreshTimeline);
 
 function refreshTimeline() {
@@ -214,7 +382,18 @@ $("#volume-slider").addEventListener("input", (event) => {
 });
 $("#volume-button").addEventListener("click", () => {
   video.muted = !video.muted;
-  $("#volume-button").textContent = video.muted ? "◌" : "◖";
+});
+video.addEventListener("volumechange", setVolumeIcon);
+video.addEventListener("click", () => {
+  if (videoFile) $("#play-button").click();
+});
+$("#timeline-content").addEventListener("click", (event) => {
+  if (!videoFile || !Number.isFinite(video.duration)) return;
+  const lane = event.target.closest(".track-lane");
+  if (!lane) return;
+  const rect = lane.getBoundingClientRect();
+  if (!rect.width) return;
+  seekTo(((event.clientX - rect.left) / rect.width) * video.duration);
 });
 $("#fullscreen-button").addEventListener("click", () => {
   if (videoFile && video.requestFullscreen) video.requestFullscreen().catch(() => {});
@@ -290,10 +469,22 @@ function getPlayableAudioTrack(stream) {
 async function getSelectedAudioBlob() {
   if (sourceChoice.value === "audio" && audioFile) return audioFile;
   if (!videoFile) throw new Error("Import a video or audio file first.");
+  if (!video.duration || !Number.isFinite(video.duration)) throw new Error("Wait for the video to finish loading, then try again.");
+  const start = clamp(trimStart, 0, video.duration);
+  const end = clamp(trimEnd || video.duration, start + 0.05, video.duration);
+  setProgressLabel("Preparing audio", "on device");
+  const fastBlob = await extractAudioFast(videoFile, start, end);
+  if (fastBlob) {
+    setProgressLabel("Audio extracted", "on device");
+    return fastBlob;
+  }
+  return captureSelectedAudio(start, end);
+}
+
+async function captureSelectedAudio(start, end) {
   if (typeof video.captureStream !== "function" && typeof video.mozCaptureStream !== "function") {
     throw new Error("This browser can't capture video audio. Try Chrome, Edge, or Firefox, or import an audio file instead.");
   }
-  if (!video.duration || !Number.isFinite(video.duration)) throw new Error("Wait for the video to finish loading, then try again.");
   const capture = video.captureStream ? video.captureStream() : video.mozCaptureStream();
   const audioTracks = getPlayableAudioTrack(capture);
   if (!audioTracks.length) {
@@ -307,60 +498,81 @@ async function getSelectedAudioBlob() {
   const originalTime = video.currentTime;
   const wasPlaying = !video.paused;
   const originalMuted = video.muted;
-  video.pause();
-  video.muted = false;
-  video.currentTime = trimStart;
-  const seekCompleted = new Promise((resolve, reject) => {
-    video.addEventListener("seeked", resolve, { once: true });
-    setTimeout(() => {
-      if (video.currentTime === trimStart) resolve();
-      else reject(new Error("Could not seek to the selected video section."));
-    }, 5000);
-  });
-  const playbackEnded = new Promise((resolve) => {
-    video.addEventListener("pause", resolve, { once: true });
-    video.addEventListener("ended", resolve, { once: true });
-  });
-  await seekCompleted;
-  recording = recorder;
-  recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-  const completed = new Promise((resolve, reject) => {
-    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
-    recorder.onerror = () => reject(new Error("Could not capture video audio."));
-  });
-  recorder.start(1000);
-  await video.play();
-  if (video.currentTime < trimEnd) await playbackEnded;
-  if (recorder.state !== "inactive") recorder.stop();
-  const blob = await completed;
-  recording = null;
-  stream.getTracks().forEach((track) => track.stop());
-  video.pause();
-  video.muted = originalMuted;
-  seekTo(originalTime);
-  if (wasPlaying) video.play().catch(() => {});
-  if (blob.size === 0) throw new Error("The audio recording is empty. Check that the selected video section has audio.");
-  return blob;
+  const sectionLength = Math.max(0.1, end - start);
+  setProgressLabel("Capturing video audio", "real-time");
+  const progressInterval = setInterval(() => {
+    const percentage = clamp(Math.round(((video.currentTime - start) / sectionLength) * 100), 0, 99);
+    setProgressLabel("Capturing video audio", `${percentage}%`);
+  }, 400);
+  try {
+    video.pause();
+    video.muted = false;
+    video.currentTime = start;
+    const seekCompleted = new Promise((resolve, reject) => {
+      video.addEventListener("seeked", resolve, { once: true });
+      setTimeout(() => {
+        if (Math.abs(video.currentTime - start) < 0.25) resolve();
+        else reject(new Error("Could not seek to the selected video section."));
+      }, 5000);
+    });
+    const playbackEnded = new Promise((resolve) => {
+      video.addEventListener("pause", resolve, { once: true });
+      video.addEventListener("ended", resolve, { once: true });
+    });
+    await seekCompleted;
+    recording = recorder;
+    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+    const completed = new Promise((resolve, reject) => {
+      recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
+      recorder.onerror = () => reject(new Error("Could not capture video audio."));
+    });
+    recorder.start(1000);
+    await video.play();
+    if (video.currentTime < end - 0.05) await playbackEnded;
+    if (recorder.state !== "inactive") recorder.stop();
+    const blob = await completed;
+    setProgressLabel("Audio captured", "on device");
+    if (blob.size === 0) throw new Error("The audio recording is empty. Check that the selected video section has audio.");
+    return blob;
+  } finally {
+    clearInterval(progressInterval);
+    recording = null;
+    stream.getTracks().forEach((track) => track.stop());
+    video.pause();
+    video.muted = originalMuted;
+    seekTo(originalTime);
+    if (wasPlaying) video.play().catch(() => {});
+  }
 }
 
 async function requestTranslation(blob, language, voice) {
-  const response = await fetch(`/api/translate?language=${encodeURIComponent(language)}&voice=${encodeURIComponent(voice)}`, {
-    method: "POST",
-    headers: { "Content-Type": blob.type || "application/octet-stream" },
-    body: blob,
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Translation failed (${response.status}).`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180000);
+  try {
+    const response = await fetch(`/api/translate?language=${encodeURIComponent(language)}&voice=${encodeURIComponent(voice)}`, {
+      method: "POST",
+      headers: { "Content-Type": blob.type || "application/octet-stream" },
+      body: blob,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `Translation failed (${response.status}).`);
+    }
+    const result = await response.json();
+    if (typeof result.translatedText !== "string" || !result.translatedText.trim()) {
+      throw new Error("The translation service returned an empty transcript.");
+    }
+    const audioBlob = result.audioBase64
+      ? new Blob([Uint8Array.from(atob(result.audioBase64), (character) => character.charCodeAt(0))], { type: result.audioMimeType || "audio/wav" })
+      : null;
+    return { audioBlob, translatedText: result.translatedText, audioUnavailableReason: result.audioUnavailableReason, timings: result.timings };
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("The AI request took too long and was cancelled. Try a shorter section.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  const result = await response.json();
-  if (typeof result.translatedText !== "string" || !result.translatedText.trim()) {
-    throw new Error("The translation service returned an empty transcript.");
-  }
-  const audioBlob = result.audioBase64
-    ? new Blob([Uint8Array.from(atob(result.audioBase64), (character) => character.charCodeAt(0))], { type: result.audioMimeType || "audio/wav" })
-    : null;
-  return { audioBlob, translatedText: result.translatedText, audioUnavailableReason: result.audioUnavailableReason };
 }
 
 async function translateCurrentAudio() {
@@ -369,13 +581,15 @@ async function translateCurrentAudio() {
   $("#translation-progress").hidden = false;
   $("#translation-result").hidden = true;
   translateButton.disabled = true;
-  $("#progress-label").textContent = sourceChoice.value === "video" ? "Capturing video audio…" : "Transcribing and translating…";
+  const startedAt = performance.now();
+  startProgressClock();
+  setProgressLabel(sourceChoice.value === "video" ? "Preparing video audio" : "Reading audio file", "on device");
   try {
     const blob = sourceChoice.value === "video" ? await getSelectedAudioBlob() : sourceFile;
-    if (blob.size > 4 * 1024 * 1024) {
+    if (blob.size > MAX_UPLOAD_BYTES) {
       throw new Error("This Vercel setup accepts audio up to 4 MiB per request. Choose a shorter section, or use a storage-backed deployment for longer audio.");
     }
-    $("#progress-label").textContent = "Transcribing, translating, and generating voice…";
+    setProgressLabel("Transcribing and translating", "AI processing");
     const language = $("#target-language").value.trim();
     const result = await requestTranslation(blob, language, $("#voice-select").value);
     if (translatedUrl) URL.revokeObjectURL(translatedUrl);
@@ -399,10 +613,14 @@ async function translateCurrentAudio() {
     $("#apply-dub-button").hidden = !videoFile || !translatedUrl;
     if (translatedUrl) $("#audio-lane").innerHTML = '<div class="audio-clip"></div>';
     refreshTimeline();
-    showToast(translatedUrl ? "Translation and voiceover are ready." : "Translation is ready to download as a transcript.");
+    const seconds = Math.max(1, Math.round((performance.now() - startedAt) / 1000));
+    showToast(translatedUrl
+      ? `Translation and voiceover ready in ${seconds}s.`
+      : `Translation ready in ${seconds}s — download the transcript below.`);
   } catch (error) {
     showToast(error.message || "Audio translation failed.", true);
   } finally {
+    stopProgressClock();
     recording = null;
     $("#translation-progress").hidden = true;
     updateTranslateButton();
@@ -490,73 +708,88 @@ $("#translated-audio").addEventListener("ended", () => {
   if (dubbed) $("#apply-dub-button").click();
 });
 
+function ensureTranslatedAudioGraph() {
+  audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioSource) {
+    audioSource = audioContext.createMediaElementSource($("#translated-audio"));
+    audioDestination = audioContext.createMediaStreamDestination();
+    audioSource.connect(audioDestination);
+    audioSource.connect(audioContext.destination);
+  }
+  return audioDestination;
+}
+
 async function exportVideo() {
+  if (exporting) return;
   if (!videoFile || !Number.isFinite(video.duration)) return;
   if (typeof video.captureStream !== "function" && typeof video.mozCaptureStream !== "function") {
     return showToast("This browser doesn't support video capture. Use Chrome, Edge, or Firefox.", true);
   }
-  const videoStream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
-  let audioStream;
-  let destination;
-  let translatedAudio;
-  const tracks = videoStream.getVideoTracks();
-  if (dubbed && translatedUrl) {
-    translatedAudio = $("#translated-audio");
-    try {
-      audioContext ||= new AudioContext();
-      await audioContext.resume();
-      destination = audioContext.createMediaStreamDestination();
-      const source = audioContext.createMediaElementSource(translatedAudio);
-      source.connect(destination);
-      source.connect(audioContext.destination);
-      audioStream = destination.stream;
-      tracks.push(...audioStream.getAudioTracks());
-    } catch (error) {
-      videoStream.getTracks().forEach((track) => track.stop());
-      return showToast(`Could not prepare translated audio: ${error.message}`, true);
-    }
-  } else {
-    tracks.push(...getPlayableAudioTrack(videoStream));
-  }
-  const stream = new MediaStream(tracks);
-  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm";
-  const recorder = new MediaRecorder(stream, { mimeType });
-  const chunks = [];
+  exporting = true;
+  exportButton.disabled = true;
+  const originalLabel = exportButton.innerHTML;
   const originalTime = video.currentTime;
   const originalMuted = video.muted;
   const wasPlaying = !video.paused;
-  video.pause();
-  if (translatedAudio) {
-    translatedAudio.pause();
-    translatedAudio.currentTime = 0;
-    const clipDuration = trimEnd - trimStart;
-    if (Number.isFinite(translatedAudio.duration) && translatedAudio.duration > 0) {
-      translatedAudio.playbackRate = Math.min(2, Math.max(0.5, translatedAudio.duration / clipDuration));
-    }
-  } else video.muted = false;
-  video.currentTime = trimStart;
-  exportButton.disabled = true;
-  exportButton.textContent = "Recording…";
-  const ready = new Promise((resolve) => {
-    video.addEventListener("seeked", resolve, { once: true });
-    setTimeout(resolve, 3000);
-  });
-  await ready;
-  const playbackEnded = new Promise((resolve) => {
-    video.addEventListener("pause", resolve, { once: true });
-    video.addEventListener("ended", resolve, { once: true });
-  });
-  recording = recorder;
-  recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-  const stopped = new Promise((resolve, reject) => {
-    recorder.onstop = resolve;
-    recorder.onerror = () => reject(new Error("The video export recording failed."));
-  });
-  recorder.start(1000);
-  if (translatedAudio) translatedAudio.play().catch(() => {});
+  const clipStart = clamp(trimStart, 0, video.duration);
+  const clipEnd = clamp(trimEnd || video.duration, clipStart + 0.1, video.duration);
+  const clipLength = Math.max(0.1, clipEnd - clipStart);
+  let videoStream = null;
+  let translatedAudio = null;
+  let recorder = null;
+  let stopped = null;
+  let progressInterval = null;
   try {
+    videoStream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+    const tracks = videoStream.getVideoTracks();
+    if (dubbed && translatedUrl) {
+      translatedAudio = $("#translated-audio");
+      const destination = ensureTranslatedAudioGraph();
+      await audioContext.resume();
+      tracks.push(...destination.stream.getAudioTracks());
+      translatedAudio.pause();
+      translatedAudio.currentTime = 0;
+      const rate = Number.isFinite(translatedAudio.duration) && translatedAudio.duration > 0
+        ? translatedAudio.duration / clipLength
+        : 1;
+      translatedAudio.playbackRate = clamp(rate, 0.5, 2);
+    } else {
+      tracks.push(...getPlayableAudioTrack(videoStream));
+      video.muted = false;
+    }
+    const stream = new MediaStream(tracks);
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm";
+    recorder = new MediaRecorder(stream, { mimeType });
+    const chunks = [];
+    video.pause();
+    video.playbackRate = 1;
+    video.currentTime = clipStart;
+    exportButton.textContent = "Preparing export…";
+    progressInterval = setInterval(() => {
+      const done = clamp(video.currentTime - clipStart, 0, clipLength);
+      const percentage = Math.round((done / clipLength) * 100);
+      const remaining = Math.max(0, Math.ceil(clipLength - done));
+      exportButton.textContent = `Exporting ${percentage}% · ${remaining}s left`;
+    }, 250);
+    const ready = new Promise((resolve) => {
+      video.addEventListener("seeked", resolve, { once: true });
+      setTimeout(resolve, 3000);
+    });
+    await ready;
+    const playbackEnded = new Promise((resolve) => {
+      video.addEventListener("pause", resolve, { once: true });
+      video.addEventListener("ended", resolve, { once: true });
+    });
+    recording = recorder;
+    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+    stopped = new Promise((resolve, reject) => {
+      recorder.onstop = resolve;
+      recorder.onerror = () => reject(new Error("The video export recording failed."));
+    });
+    recorder.start(1000);
+    if (translatedAudio) translatedAudio.play().catch(() => {});
     await video.play();
-    if (video.currentTime < trimEnd) await playbackEnded;
+    if (video.currentTime < clipEnd - 0.05) await playbackEnded;
     if (recorder.state !== "inactive") recorder.stop();
     await stopped;
     const output = new Blob(chunks, { type: mimeType });
@@ -567,21 +800,28 @@ async function exportVideo() {
     link.download = `${videoFile.name.replace(/\.[^.]+$/, "")}-edited.webm`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    showToast("Your edited clip has been downloaded.");
+    showToast(`Export complete — ${clipLength.toFixed(0)}s clip downloaded.`);
   } catch (error) {
-    if (recorder.state !== "inactive") recorder.stop();
-    await stopped.catch(() => {});
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    if (stopped) await stopped.catch(() => {});
     showToast(error.message || "Video export failed.", true);
   } finally {
+    clearInterval(progressInterval);
     translatedAudio?.pause();
     if (translatedAudio) translatedAudio.playbackRate = 1;
     video.pause();
+    video.playbackRate = 1;
     video.muted = originalMuted;
     seekTo(originalTime);
-    stream.getTracks().forEach((track) => track.stop());
+    const keepAlive = new Set(audioDestination ? audioDestination.stream.getTracks() : []);
+    videoStream?.getTracks().forEach((track) => {
+      if (!keepAlive.has(track)) track.stop();
+    });
     if (wasPlaying && !dubbed) video.play().catch(() => {});
     exportButton.disabled = false;
-    exportButton.innerHTML = '<span class="export-icon">↗</span> Export video';
+    exportButton.innerHTML = originalLabel;
+    exporting = false;
+    recording = null;
   }
 }
 exportButton.addEventListener("click", exportVideo);
@@ -589,13 +829,14 @@ exportButton.addEventListener("click", exportVideo);
 document.addEventListener("keydown", (event) => {
   const target = event.target;
   if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) return;
+  const onHome = document.querySelector(".app-shell")?.classList.contains("is-home");
   if (event.code === "Space") {
     event.preventDefault();
-    $("#play-button").click();
+    if (!onHome) $("#play-button").click();
   } else if (event.code === "ArrowLeft") {
-    seekTo(video.currentTime - 5);
+    if (!onHome) seekTo(video.currentTime - 5);
   } else if (event.code === "ArrowRight") {
-    seekTo(video.currentTime + 5);
+    if (!onHome) seekTo(video.currentTime + 5);
   } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "o") {
     event.preventDefault();
     videoInput.click();

@@ -3,35 +3,403 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#111214" />
-    <meta name="description" content="A private, browser-based video editor with AI audio translation." />
-    <title>Frame — Video studio</title>
+    <meta name="theme-color" content="#08090c" />
+    <meta name="description" content="Frame is a local-first video studio with AI dubbing, smart trim, canvas resizing and one-click export." />
+    <title>Frame — AI video studio</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2308090c'/%3E%3Cpath d='M24 18h22v8H32v7h12v8H32v13h-8V18z' fill='%23f5f3ee'/%3E%3Ccircle cx='46' cy='46' r='6' fill='%23ff5c38'/%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <!-- Icon sprite -->
+    <svg class="svg-sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-spark" viewBox="0 0 24 24">
+        <path d="M12 2.6l2.2 6.2 6.2 2.2-6.2 2.2L12 19.4l-2.2-6.2L3.6 11l6.2-2.2L12 2.6Z" fill="currentColor" />
+        <path d="M19 15.6l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" fill="currentColor" opacity=".7" />
+      </symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.2 20 12 8 18.8V5.2Z" fill="currentColor" /></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 16V4" /><path d="m6.5 9.5 5.5-5.5 5.5 5.5" /><path d="M4 16v2.5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V16" />
+      </symbol>
+      <symbol id="i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2.5" y="5" width="14" height="14" rx="3.5" /><path d="m16.5 10 5-3v10l-5-3" /><path d="m7 9.5 4 2.5-4 2.5v-5Z" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="i-music" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18V6l11-2v12" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="17.5" cy="16" r="2.5" />
+      </symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9" /><path d="M3.5 9h17M3.5 15h17" /><path d="M12 3c2.6 2.6 3.9 5.6 3.9 9S14.6 18.4 12 21c-2.6-2.6-3.9-5.6-3.9-9S9.4 5.6 12 3Z" />
+      </symbol>
+      <symbol id="i-wand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m4 20 10.5-10.5" /><path d="m14 4 1.2 3.3L18.5 8.5l-3.3 1.2L14 13l-1.2-3.3L9.5 8.5l3.3-1.2L14 4Z" /><path d="m19.5 13 .7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8Z" />
+      </symbol>
+      <symbol id="i-scissors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="6" cy="6" r="2.6" /><circle cx="6" cy="18" r="2.6" /><path d="m8.2 7.6 12 10.4M20.2 6 8.2 16.4" />
+      </symbol>
+      <symbol id="i-crop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6.5 2.5v15h15" /><path d="M2.5 6.5h15v15" />
+      </symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12h15" /><path d="m13 6 6 6-6 6" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m4.5 12.5 4.7 4.7L19.5 6.8" />
+      </symbol>
+      <symbol id="i-film" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2.5" y="4.5" width="19" height="15" rx="3" /><path d="M7 4.5v15M17 4.5v15M2.5 9.5h4.5M2.5 14.5h4.5M17 9.5h4.5M17 14.5h4.5" />
+      </symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.5 2 5 13.2h5.2L9.8 22 19 10.2h-5.4L13.5 2Z" fill="currentColor" /></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2.5" width="6" height="12" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.5" />
+      </symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+        <rect x="3" y="3" width="7.5" height="7.5" rx="2" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="2" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="2" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2" />
+      </symbol>
+      <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.5 10.2 12 3l8.5 7.2" /><path d="M5.5 9v10.5a1 1 0 0 0 1 1H10v-6h4v6h3.5a1 1 0 0 0 1-1V9" />
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m5 5 14 14M19 5 5 19" /></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.4" y="5" width="4.2" height="14" rx="1.5" fill="currentColor" /><rect x="13.4" y="5" width="4.2" height="14" rx="1.5" fill="currentColor" /></symbol>
+      <symbol id="i-rewind" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 17.2 4.4 12 11 6.8v10.4Z" /><path d="M20 17.2 13.4 12 20 6.8v10.4Z" /></symbol>
+      <symbol id="i-forward" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 17.2 19.6 12 13 6.8v10.4Z" /><path d="M4 17.2 10.6 12 4 6.8v10.4Z" /></symbol>
+      <symbol id="i-volume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.6v4.8h3.4L12 18.6V5.4L7.4 9.6H4Z" /><path d="M15.6 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.7 7.7 0 0 1 0 10.8" /></symbol>
+      <symbol id="i-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.6v4.8h3.4L12 18.6V5.4L7.4 9.6H4Z" /><path d="m15.6 9.6 5 5M20.6 9.6l-5 5" /></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3.5H3.5V9M15 3.5h5.5V9M9 20.5H3.5V15M15 20.5h5.5V15" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5 12h14" /></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9 7V4.8h6V7M6.5 7l.9 12.2a1.8 1.8 0 0 0 1.8 1.6h5.6a1.8 1.8 0 0 0 1.8-1.6L17.5 7" /><path d="M10 11v6M14 11v6" /></symbol>
+      <symbol id="i-export" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7" /><path d="M8.5 7H17v8.5" /></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="18.5" cy="12" r="1.8" /></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.8 6v5.8c0 4.3 3 7.2 7.2 9.2 4.2-2 7.2-4.9 7.2-9.2V6L12 3Z" /><path d="m9 12 2.2 2.2L15.5 10" /></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11" /><path d="m7.4 10.6 4.6 4.6 4.6-4.6" /><path d="M4.5 19.5h15" /></symbol>
+    </svg>
+
+    <div class="app-shell is-home">
       <header class="topbar">
-        <a class="brand" href="#" aria-label="Frame home"><span class="brand-mark">f</span> frame<span class="brand-dot">.</span></a>
+        <a class="brand" href="#" id="brand-home" aria-label="Frame home"><span class="brand-mark">f</span> frame<span class="brand-dot">.</span></a>
+
+        <nav class="main-nav" aria-label="Primary">
+          <button class="nav-link is-active" type="button" data-view="home">
+            <svg class="icon"><use href="#i-home"></use></svg><span>Home</span>
+          </button>
+          <button class="nav-link" type="button" data-view="studio">
+            <svg class="icon"><use href="#i-film"></use></svg><span>Studio</span>
+          </button>
+          <button class="nav-link" type="button" data-scroll="templates"><span>Templates</span></button>
+          <button class="nav-link" type="button" data-scroll="features"><span>AI tools</span></button>
+        </nav>
+
         <div class="project-name"><span class="status-dot"></span><span id="project-name">Untitled project</span></div>
+
         <div class="top-actions">
+          <span class="plan-pill"><svg class="icon"><use href="#i-spark"></use></svg> Free plan</span>
           <span class="autosave"><span class="save-check">✓</span> Saved locally</span>
-          <button class="button button-primary" id="export-button" disabled><span class="export-icon">↗</span> Export video</button>
+          <button class="button button-primary" id="export-button" disabled><span class="export-icon"><svg class="icon"><use href="#i-export"></use></svg></span> Export video</button>
+          <div class="avatar top-avatar" title="My workspace">F</div>
         </div>
       </header>
 
-      <main class="workspace">
+      <!-- ================= HOME ================= -->
+      <main class="home-view" id="home-view">
+        <div class="home-bg" aria-hidden="true">
+          <span class="aurora aurora-1"></span>
+          <span class="aurora aurora-2"></span>
+          <span class="aurora aurora-3"></span>
+          <div class="home-grid"></div>
+          <div class="home-noise"></div>
+        </div>
+
+        <div class="home-inner">
+          <section class="hero">
+            <div class="hero-copy">
+              <a class="hero-pill" href="#features">
+                <span class="pill-badge"><svg class="icon"><use href="#i-spark"></use></svg> New</span>
+                <span>AI dubbing in 30+ languages</span>
+                <svg class="icon pill-arrow"><use href="#i-arrow"></use></svg>
+              </a>
+              <h1>Make video that<br /><span class="grad">speaks</span> <em>every</em> language.</h1>
+              <p class="hero-sub">Frame is the local-first studio where raw clips become global stories. Trim, resize and dub your audio with AI — right in your browser.</p>
+              <div class="hero-actions">
+                <button class="button button-primary button-lg" id="hero-upload">
+                  <svg class="icon"><use href="#i-upload"></use></svg> Import a clip
+                </button>
+                <button class="button button-glass button-lg" id="hero-studio">
+                  <span class="play-dot"><svg class="icon"><use href="#i-play"></use></svg></span> Explore the studio
+                </button>
+              </div>
+              <ul class="hero-meta">
+                <li><svg class="icon"><use href="#i-check"></use></svg> No uploads</li>
+                <li><svg class="icon"><use href="#i-check"></use></svg> No watermark</li>
+                <li><svg class="icon"><use href="#i-check"></use></svg> Nothing to install</li>
+              </ul>
+            </div>
+
+            <div class="hero-visual">
+              <div class="visual-halo"></div>
+              <div class="studio-mock">
+                <div class="mock-top">
+                  <span class="mock-dots"><i></i><i></i><i></i></span>
+                  <span class="mock-file"><svg class="icon"><use href="#i-film"></use></svg> aurora-drift.mp4</span>
+                  <span class="mock-live"><i></i> AI DUB</span>
+                </div>
+                <div class="mock-canvas">
+                  <div class="mock-sky"></div>
+                  <div class="mock-sun"></div>
+                  <div class="mock-ridge mock-ridge-back"></div>
+                  <div class="mock-ridge mock-ridge-front"></div>
+                  <span class="mock-lang">ES <span>→</span> EN</span>
+                  <button class="mock-play" type="button" tabindex="-1" aria-hidden="true"><svg class="icon"><use href="#i-play"></use></svg></button>
+                  <div class="mock-caption"><span class="caption-wave"><i></i><i></i><i></i></span> Every story deserves to travel.</div>
+                </div>
+                <div class="mock-tracks">
+                  <div class="mock-row">
+                    <span class="mock-row-label">V1</span>
+                    <div class="mock-lane"><span class="mock-clip"></span><span class="mock-playhead"></span></div>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-row-label audio">A1</span>
+                    <div class="mock-lane audio">
+                      <span class="mock-wave">
+                        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div class="mock-foot">
+                  <span>00:12</span>
+                  <span class="mock-controls"><i></i><b><svg class="icon"><use href="#i-play"></use></svg></b><i></i></span>
+                  <span>00:48</span>
+                </div>
+              </div>
+              <div class="float-chip chip-lang"><span class="chip-ico"><svg class="icon"><use href="#i-globe"></use></svg></span><div><strong>30+ languages</strong><small>One click to dub</small></div></div>
+              <div class="float-chip chip-voice"><span class="chip-ico"><svg class="icon"><use href="#i-mic"></use></svg></span><div><strong>Natural voice</strong><small>Studio quality</small></div></div>
+            </div>
+          </section>
+
+          <form class="prompt-dock" id="home-prompt-form">
+            <span class="prompt-icon"><svg class="icon"><use href="#i-spark"></use></svg></span>
+            <label class="sr-only" for="home-prompt">Describe the video you want to make</label>
+            <input id="home-prompt" type="text" autocomplete="off" placeholder="Describe an edit — “trim 12–38s”, “make it vertical”, “translate to Japanese”…" />
+            <button class="prompt-submit" type="submit">Generate <svg class="icon"><use href="#i-arrow"></use></svg></button>
+          </form>
+          <div class="prompt-chips">
+            <span class="chips-label">Try</span>
+            <button class="chip" type="button" data-prompt="Trim this video from 12 to 38 seconds">Trim 12–38s</button>
+            <button class="chip" type="button" data-prompt="Change the canvas to vertical 9:16">Make it vertical</button>
+            <button class="chip" type="button" data-prompt="Translate the audio to Japanese">Dub in Japanese</button>
+            <button class="chip" type="button" data-prompt="Translate the audio to Spanish">Translate to Spanish</button>
+          </div>
+
+          <section class="home-section" id="quickstart">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">QUICK START</p>
+                <h2>Everything, one canvas.</h2>
+              </div>
+              <p class="section-sub">Six ways in. Pick a tool and the studio adapts around your clip.</p>
+            </div>
+            <div class="quick-grid">
+              <button class="quick-card" type="button" data-action="video">
+                <span class="quick-ico tint-green"><svg class="icon"><use href="#i-video"></use></svg></span>
+                <span class="quick-tag">IMPORT</span>
+                <strong>Bring in a clip</strong>
+                <span class="quick-copy">MP4, MOV or WebM. It never leaves your device.</span>
+                <span class="quick-arrow"><svg class="icon"><use href="#i-arrow"></use></svg></span>
+              </button>
+              <button class="quick-card" type="button" data-action="translate">
+                <span class="quick-ico tint-violet"><svg class="icon"><use href="#i-globe"></use></svg></span>
+                <span class="quick-tag">AI</span>
+                <strong>Dub in 30+ languages</strong>
+                <span class="quick-copy">Transcribe, translate and generate a voiceover.</span>
+                <span class="quick-arrow"><svg class="icon"><use href="#i-arrow"></use></svg></span>
+              </button>
+              <button class="quick-card" type="button" data-action="edit">
+                <span class="quick-ico tint-cyan"><svg class="icon"><use href="#i-wand"></use></svg></span>
+                <span class="quick-tag">AI</span>
+                <strong>Edit with words</strong>
+                <span class="quick-copy">Describe a cut or a format. The assistant applies it.</span>
+                <span class="quick-arrow"><svg class="icon"><use href="#i-arrow"></use></svg></span>
+              </button>
+              <button class="quick-card" type="button" data-action="trim">
+                <span class="quick-ico tint-lime"><svg class="icon"><use href="#i-scissors"></use></svg></span>
+                <span class="quick-tag">TIMELINE</span>
+                <strong>Smart trim</strong>
+                <span class="quick-copy">Dial in the exact in and out points, frame by frame.</span>
+                <span class="quick-arrow"><svg class="icon"><use href="#i-arrow"></use></svg></span>
+              </button>
+              <button class="quick-card" type="button" data-action="canvas">
+                <span class="quick-ico tint-pink"><svg class="icon"><use href="#i-crop"></use></svg></span>
+                <span class="quick-tag">FORMAT</span>
+                <strong>Resize anywhere</strong>
+                <span class="quick-copy">Landscape, vertical and square in a single click.</span>
+                <span class="quick-arrow"><svg class="icon"><use href="#i-arrow"></use></svg></span>
+              </button>
+              <button class="quick-card" type="button" data-action="audio">
+                <span class="quick-ico tint-amber"><svg class="icon"><use href="#i-music"></use></svg></span>
+                <span class="quick-tag">IMPORT</span>
+                <strong>Add audio</strong>
+                <span class="quick-copy">Voiceover, soundtrack or a podcast track.</span>
+                <span class="quick-arrow"><svg class="icon"><use href="#i-arrow"></use></svg></span>
+              </button>
+            </div>
+          </section>
+
+          <section class="home-section" id="templates">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">STARTING POINTS</p>
+                <h2>Borrow a format.</h2>
+              </div>
+              <p class="section-sub">Pick a pace, drop your footage, make it yours. Every template opens in the studio.</p>
+            </div>
+            <div class="template-rail">
+              <button class="template-card" type="button" data-template="Launch film">
+                <span class="tpl-art tpl-launch">
+                  <span class="tpl-glow"></span>
+                  <span class="tpl-word">LAUNCH</span>
+                  <span class="tpl-badge">POPULAR</span>
+                  <span class="tpl-play"><svg class="icon"><use href="#i-play"></use></svg></span>
+                </span>
+                <span class="tpl-info"><strong>Launch film</strong><span>16:9 · 30 sec</span></span>
+              </button>
+              <button class="template-card" type="button" data-template="Podcast clip">
+                <span class="tpl-art tpl-podcast">
+                  <span class="tpl-glow"></span>
+                  <span class="tpl-orbit"></span>
+                  <span class="tpl-word">VOICES</span>
+                  <span class="tpl-play"><svg class="icon"><use href="#i-play"></use></svg></span>
+                </span>
+                <span class="tpl-info"><strong>Podcast clip</strong><span>9:16 · 45 sec</span></span>
+              </button>
+              <button class="template-card" type="button" data-template="Travel reel">
+                <span class="tpl-art tpl-travel">
+                  <span class="tpl-glow"></span>
+                  <span class="tpl-sun"></span>
+                  <span class="tpl-word">WANDER</span>
+                  <span class="tpl-play"><svg class="icon"><use href="#i-play"></use></svg></span>
+                </span>
+                <span class="tpl-info"><strong>Travel reel</strong><span>9:16 · 20 sec</span></span>
+              </button>
+              <button class="template-card" type="button" data-template="Talking head">
+                <span class="tpl-art tpl-head">
+                  <span class="tpl-glow"></span>
+                  <span class="tpl-frame"></span>
+                  <span class="tpl-word">DIRECT</span>
+                  <span class="tpl-play"><svg class="icon"><use href="#i-play"></use></svg></span>
+                </span>
+                <span class="tpl-info"><strong>Talking head</strong><span>16:9 · 60 sec</span></span>
+              </button>
+              <button class="template-card" type="button" data-template="Music drop">
+                <span class="tpl-art tpl-music">
+                  <span class="tpl-glow"></span>
+                  <span class="tpl-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                  <span class="tpl-word">DROP</span>
+                  <span class="tpl-play"><svg class="icon"><use href="#i-play"></use></svg></span>
+                </span>
+                <span class="tpl-info"><strong>Music drop</strong><span>1:1 · 15 sec</span></span>
+              </button>
+              <button class="template-card" type="button" data-template="Product loop">
+                <span class="tpl-art tpl-product">
+                  <span class="tpl-glow"></span>
+                  <span class="tpl-ring"></span>
+                  <span class="tpl-word">FORM</span>
+                  <span class="tpl-play"><svg class="icon"><use href="#i-play"></use></svg></span>
+                </span>
+                <span class="tpl-info"><strong>Product loop</strong><span>1:1 · 10 sec</span></span>
+              </button>
+            </div>
+          </section>
+
+          <section class="home-section" id="features">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">AI TOOLKIT</p>
+                <h2>AI that edits like a collaborator.</h2>
+              </div>
+              <p class="section-sub">Not a black box. Every suggestion lands in the timeline, ready for you to review.</p>
+            </div>
+            <div class="feature-grid">
+              <article class="feature-card feature-dub">
+                <div class="feature-copy">
+                  <span class="feature-tag"><svg class="icon"><use href="#i-globe"></use></svg> AI DUBBING</span>
+                  <h3>Speak to the world.</h3>
+                  <p>Keep your voice and your timing. Frame transcribes the audio, translates it and generates a natural voiceover in another language.</p>
+                  <div class="lang-chips">
+                    <span>Spanish</span><span>Japanese</span><span>Hindi</span><span>Arabic</span><span>French</span><span>Korean</span><span>+25</span>
+                  </div>
+                  <button class="button button-glass feature-cta" type="button" data-action="translate">Open translator <svg class="icon"><use href="#i-arrow"></use></svg></button>
+                </div>
+                <div class="dub-visual" aria-hidden="true">
+                  <div class="dub-disc"><span><svg class="icon"><use href="#i-mic"></use></svg></span></div>
+                  <div class="dub-wave">
+                    <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                  </div>
+                  <span class="dub-caption">“Now everyone can follow along.”</span>
+                </div>
+              </article>
+
+              <article class="feature-card feature-small">
+                <span class="feature-tag tint-violet"><svg class="icon"><use href="#i-wand"></use></svg> AI EDIT</span>
+                <h3>Cut with words.</h3>
+                <p>Type the edit you want. The assistant sets the trim, ratio or translation for you.</p>
+                <div class="mini-prompt" aria-hidden="true">
+                  <span class="mini-input">Trim 12–38s and make it vertical</span>
+                  <span class="mini-send"><svg class="icon"><use href="#i-arrow"></use></svg></span>
+                  <span class="mini-reply"><svg class="icon"><use href="#i-check"></use></svg> Applied to timeline</span>
+                </div>
+                <button class="feature-link" type="button" data-action="edit">Try the AI edit assistant <svg class="icon"><use href="#i-arrow"></use></svg></button>
+              </article>
+
+              <article class="feature-card feature-small">
+                <span class="feature-tag tint-pink"><svg class="icon"><use href="#i-grid"></use></svg> CANVAS</span>
+                <h3>One clip, every format.</h3>
+                <p>Reframe for feed, story or square without re-exporting your source.</p>
+                <div class="ratio-stack" aria-hidden="true">
+                  <span class="ratio-frame r-wide">16:9</span>
+                  <span class="ratio-frame r-tall">9:16</span>
+                  <span class="ratio-frame r-square">1:1</span>
+                </div>
+                <button class="feature-link" type="button" data-action="canvas">Choose a canvas <svg class="icon"><use href="#i-arrow"></use></svg></button>
+              </article>
+            </div>
+          </section>
+
+          <section class="stats-strip" aria-label="Frame at a glance">
+            <div class="stat"><strong>30<span>+</span></strong><span>Languages for AI voice</span></div>
+            <div class="stat"><strong>0</strong><span>Files uploaded to edit</span></div>
+            <div class="stat"><strong>4K</strong><span>Source footage, uncompressed</span></div>
+            <div class="stat"><strong>1<span>-click</span></strong><span>From raw clip to dub</span></div>
+          </section>
+
+          <section class="home-cta">
+            <div class="cta-glow" aria-hidden="true"></div>
+            <p class="eyebrow">READY WHEN YOU ARE</p>
+            <h2>Your next story starts with one clip.</h2>
+            <p>Import a video and the studio is ready. No account, no watermark, no waiting in line.</p>
+            <div class="cta-actions">
+              <button class="button button-primary button-lg" id="home-cta-upload"><svg class="icon"><use href="#i-upload"></use></svg> Start creating</button>
+              <button class="button button-ghost button-lg" id="home-cta-studio">Open the studio <svg class="icon"><use href="#i-arrow"></use></svg></button>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <!-- ================= STUDIO ================= -->
+      <main class="workspace" id="studio-view" hidden>
         <aside class="sidebar">
           <div class="sidebar-heading">
             <div><p class="eyebrow">YOUR WORKSPACE</p><h1>Studio</h1></div>
-            <button class="icon-button" id="add-media-button" title="Add media" aria-label="Add media">＋</button>
+            <button class="icon-button" id="add-media-button" title="Add media" aria-label="Add media"><svg class="icon"><use href="#i-plus"></use></svg></button>
           </div>
           <button class="upload-card" id="upload-button">
-            <span class="upload-symbol">↑</span>
+            <span class="upload-symbol"><svg class="icon"><use href="#i-upload"></use></svg></span>
             <span class="upload-title">Import your media</span>
-            <span class="upload-description">Video or audio · import locally</span>
+            <span class="upload-description">Video or audio · stays on device</span>
             <span class="upload-cta">Browse files <span>→</span></span>
           </button>
           <input id="video-input" type="file" accept="video/*" hidden />
@@ -45,8 +413,8 @@
           </div>
 
           <div class="sidebar-bottom">
-            <div class="privacy-card"><span class="privacy-icon">◈</span><div><strong>Your media, your choice</strong><span>Only audio you translate is sent to AI.</span></div></div>
-            <div class="profile"><div class="avatar">F</div><div><strong>My workspace</strong><span>Free plan</span></div><span class="profile-menu">···</span></div>
+            <div class="privacy-card"><span class="privacy-icon"><svg class="icon"><use href="#i-shield"></use></svg></span><div><strong>Your media, your choice</strong><span>Only audio you translate is sent to AI.</span></div></div>
+            <div class="profile"><div class="avatar">F</div><div><strong>My workspace</strong><span>Free plan</span></div><span class="profile-menu"><svg class="icon"><use href="#i-more"></use></svg></span></div>
           </div>
         </aside>
 
@@ -73,22 +441,21 @@
               <div class="audio-art"><span>♫</span></div><p id="audio-preview-title">Audio ready to translate</p>
               <audio id="audio-player" controls></audio>
             </div>
-            <div class="toast" id="toast" role="status" aria-live="polite"></div>
           </div>
 
           <div class="transport">
-            <div class="transport-left"><button class="transport-icon" id="skip-back" aria-label="Back 5 seconds">↶</button><button class="play-button" id="play-button" aria-label="Play">▶</button><button class="transport-icon" id="skip-forward" aria-label="Forward 5 seconds">↷</button></div>
+            <div class="transport-left"><button class="transport-icon" id="skip-back" aria-label="Back 5 seconds" title="Back 5 seconds"><svg class="icon"><use href="#i-rewind"></use></svg></button><button class="play-button" id="play-button" aria-label="Play" title="Play / pause (Space)"><svg class="icon"><use href="#i-play"></use></svg></button><button class="transport-icon" id="skip-forward" aria-label="Forward 5 seconds" title="Forward 5 seconds"><svg class="icon"><use href="#i-forward"></use></svg></button></div>
             <div class="time-display"><span id="current-time">00:00</span><span class="time-divider">/</span><span id="duration-time">00:00</span></div>
-            <div class="transport-right"><button class="transport-icon" id="volume-button" aria-label="Toggle mute">◖</button><input id="volume-slider" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume" /><button class="transport-icon fullscreen-button" id="fullscreen-button" aria-label="Fullscreen">⛶</button></div>
+            <div class="transport-right"><button class="transport-icon" id="volume-button" aria-label="Toggle mute" title="Mute"><svg class="icon"><use href="#i-volume"></use></svg></button><input id="volume-slider" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume" /><button class="transport-icon fullscreen-button" id="fullscreen-button" aria-label="Fullscreen" title="Fullscreen"><svg class="icon"><use href="#i-expand"></use></svg></button></div>
           </div>
 
           <section class="timeline">
-            <div class="timeline-heading"><div class="timeline-title">TIMELINE <span class="timeline-help" title="Set the trim handles to choose the section you want to export.">?</span></div><div class="timeline-tools"><button class="tool-button" id="split-button" disabled title="Set the out point at the playhead">⌁ <span>Set out</span></button><button class="tool-button" id="delete-button" disabled title="Remove current clip">⌫ <span>Delete</span></button><span class="tool-divider"></span><button class="tool-button zoom-button" id="zoom-out" title="Zoom out">−</button><span class="zoom-level" id="zoom-level">100%</span><button class="tool-button zoom-button" id="zoom-in" title="Zoom in">＋</button></div></div>
+            <div class="timeline-heading"><div class="timeline-title">TIMELINE <span class="timeline-help" title="Set the trim handles to choose the section you want to export.">?</span></div><div class="timeline-tools"><button class="tool-button" id="split-button" disabled title="Set the out point at the playhead"><svg class="icon"><use href="#i-scissors"></use></svg> <span>Set out</span></button><button class="tool-button" id="delete-button" disabled title="Remove current clip"><svg class="icon"><use href="#i-trash"></use></svg> <span>Delete</span></button><span class="tool-divider"></span><button class="tool-button zoom-button" id="zoom-out" title="Zoom out" aria-label="Zoom out"><svg class="icon"><use href="#i-minus"></use></svg></button><span class="zoom-level" id="zoom-level">100%</span><button class="tool-button zoom-button" id="zoom-in" title="Zoom in" aria-label="Zoom in"><svg class="icon"><use href="#i-plus"></use></svg></button></div></div>
             <div class="ruler" id="ruler"><span>00:00</span><span>00:10</span><span>00:20</span><span>00:30</span><span>00:40</span><span>00:50</span><span>01:00</span></div>
             <div class="timeline-content" id="timeline-content">
-              <div class="track-label"><span class="track-icon">▣</span> Video</div>
+              <div class="track-label"><span class="track-icon"><svg class="icon"><use href="#i-video"></use></svg></span> Video</div>
               <div class="track-lane" id="track-lane"><div class="timeline-empty">Import a video to start your timeline</div></div>
-              <div class="track-label audio-track-label"><span class="track-icon">♫</span> Audio</div>
+              <div class="track-label audio-track-label"><span class="track-icon"><svg class="icon"><use href="#i-music"></use></svg></span> Audio</div>
               <div class="track-lane audio-lane" id="audio-lane"><div class="timeline-empty audio-empty">Audio track appears here</div></div>
               <div class="playhead" id="playhead"><span></span></div>
             </div>
@@ -131,9 +498,14 @@
           <p class="api-note">AI tools use Groq. Add <code>GROQ_API_KEY</code> to your Vercel project settings. Never put the key in browser code.</p>
         </aside>
       </main>
-      <footer class="footer"><span>FRAME <span class="footer-dot">●</span> VIDEO STUDIO</span><span>Made for stories that travel.</span><button id="keyboard-help">⌘ / &nbsp; Keyboard shortcuts</button></footer>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+      <footer class="footer"><span>FRAME <span class="footer-dot">●</span> AI VIDEO STUDIO</span><span>Made for stories that travel.</span><button id="keyboard-help">⌘ / &nbsp; Keyboard shortcuts</button></footer>
     </div>
-    <div class="keyboard-modal" id="keyboard-modal" hidden><div class="modal-card"><button class="modal-close" id="modal-close">×</button><h2>Keyboard shortcuts</h2><p><kbd>Space</kbd> Play / pause</p><p><kbd>←</kbd> <kbd>→</kbd> Step 5 seconds</p><p><kbd>⌘</kbd> <kbd>O</kbd> Import video</p></div></div>
+
+    <div class="keyboard-modal" id="keyboard-modal" hidden><div class="modal-card"><button class="modal-close" id="modal-close" aria-label="Close">×</button><h2>Keyboard shortcuts</h2><p><kbd>Space</kbd> Play / pause</p><p><kbd>←</kbd> <kbd>→</kbd> Step 5 seconds</p><p><kbd>⌘</kbd> <kbd>O</kbd> Import video</p></div></div>
     <script src="/app.js" defer></script>
+    <script src="/home.js" defer></script>
   </body>
 </html>

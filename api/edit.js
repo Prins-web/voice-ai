@@ -1,5 +1,7 @@
 const MAX_REQUEST_BYTES = 8 * 1024;
 const ASPECT_RATIOS = new Set(["16:9", "9:16", "1:1"]);
+const EDIT_MODEL = "llama-3.1-8b-instant";
+const EDIT_MODEL_FALLBACK = "llama-3.3-70b-versatile";
 
 async function readBody(request) {
   const chunks = [];
@@ -10,6 +12,32 @@ async function readBody(request) {
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+function buildRequest(apiKey, prompt, duration, model) {
+  return fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You are a video editing assistant. Select exactly one supported action based on the user's instruction.",
+            'Return only a JSON object with keys "action", "reply", "start", "end", "ratio", "language".',
+            'Actions: "trim" (start/end are seconds), "aspect_ratio" (ratio is "16:9", "9:16", or "1:1"), "translate" (language is a target language), or "unknown".',
+            "Never invent capabilities or claim an edit was done. If unsupported or ambiguous, use action unknown and briefly suggest a supported request.",
+            `Video duration in seconds: ${duration === null ? "unknown (audio-only project)" : duration}.`,
+          ].join(" "),
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.1,
+      max_tokens: 300,
+      response_format: { type: "json_object" },
+    }),
+  });
 }
 
 module.exports = async function handler(request, response) {
@@ -31,29 +59,12 @@ module.exports = async function handler(request, response) {
   const duration = Number.isFinite(input.duration) ? Math.max(0, Math.min(input.duration, 86400)) : null;
 
   try {
-    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          {
-            role: "system",
-            content: [
-              "You are a video editing assistant. Select exactly one supported action based on the user's instruction.",
-              'Return only a JSON object with keys "action", "reply", "start", "end", "ratio", "language".',
-              'Actions: "trim" (start/end are seconds), "aspect_ratio" (ratio is "16:9", "9:16", or "1:1"), "translate" (language is a target language), or "unknown".',
-              "Never invent capabilities or claim an edit was done. If unsupported or ambiguous, use action unknown and briefly suggest a supported request.",
-              `Video duration in seconds: ${duration === null ? "unknown (audio-only project)" : duration}.`,
-            ].join(" "),
-          },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.1,
-        max_tokens: 300,
-        response_format: { type: "json_object" },
-      }),
-    });
+    let groqResponse = await buildRequest(apiKey, prompt, duration, EDIT_MODEL);
+    if (!groqResponse.ok && groqResponse.status >= 500) {
+      const body = await groqResponse.text();
+      console.error("Groq edit assistant error (primary):", groqResponse.status, body.slice(0, 1000));
+      groqResponse = await buildRequest(apiKey, prompt, duration, EDIT_MODEL_FALLBACK);
+    }
     if (!groqResponse.ok) {
       const body = await groqResponse.text();
       console.error("Groq edit assistant error:", groqResponse.status, body.slice(0, 1000));
